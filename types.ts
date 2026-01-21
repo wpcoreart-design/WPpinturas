@@ -1,25 +1,27 @@
 
+// PincelPro - Central Types Definition
+
 export enum ToolStatus {
-  AVAILABLE = 'Disponível',
-  IN_USE = 'Em Uso',
-  OUT = 'Em Campo',
-  PENDING_CONFERENCE = 'Aguardando Conferência',
-  PENDING_RETURN = 'Aguardando Conferência',
-  PENDING_WITHDRAWAL = 'Aguardando Retirada',
-  DEFECTIVE = 'Com Defeito',
-  MAINTENANCE = 'Manutenção',
-  LOST = 'Perda/Sumida'
+  AVAILABLE = 'disponível',
+  OUT = 'emprestado',
+  PENDING_RETURN = 'aguardando_conferencia',
+  DEFECTIVE = 'defeito',
+  LOST = 'perdido',
+  /** Status used for tools awaiting approval of withdrawal */
+  PENDING_WITHDRAWAL = 'pendente_retirada'
 }
 
 export enum UserRole {
   ADMIN = 'admin',
-  MANAGER = 'admin',
   PAINTER = 'pintor',
-  CONFEREE = 'conferente'
+  CONFEREE = 'conferente',
+  /** Manager role used in Dashboard and ToolInventory components */
+  MANAGER = 'manager'
 }
 
+/** Type of employment or contract for painters */
 export enum PainterType {
-  EMPLOYEE = 'Funcionário',
+  EMPLOYEE = 'CLT',
   CONTRACTOR = 'Terceirizado'
 }
 
@@ -30,11 +32,12 @@ export interface User {
   password?: string;
   role: UserRole;
   active: boolean;
-  type?: PainterType;
 }
 
-// Alias for components expecting Painter
-export type Painter = User;
+/** Interface representing a Painter, extending base User */
+export interface Painter extends User {
+  type?: PainterType;
+}
 
 export interface Tool {
   id: string;
@@ -44,34 +47,41 @@ export interface Tool {
   status: ToolStatus;
   currentHolderId?: string;
   lastUpdate: number;
+  /** Optional specifications/notes about the tool */
   specifications?: string;
+  /** Current location or site where the tool is being used */
   location?: string;
 }
 
+/** Predefined actions for tool movement records */
 export enum TransactionAction {
-  RETIRADA = 'Retirada',
-  SOLICITOU_DEVOLUCAO = 'Solicitou Devolução',
-  CONFIRMOU_OK = 'Confirmou OK',
-  CONFIRMOU_DEFEITO = 'Confirmou Defeito',
   REQUEST_WITHDRAWAL = 'Solicitou Retirada',
   APPROVE_WITHDRAWAL = 'Aprovou Retirada',
   REQUEST_RETURN = 'Solicitou Devolução',
   CONFIRM_RETURN_OK = 'Confirmou OK',
   CONFIRM_RETURN_DEFECT = 'Confirmou Defeito',
-  MARK_LOST = 'Marcou como Perdida'
+  MARK_LOST = 'Perda/Sumida'
 }
 
-export interface Movement {
+/** Interface for tool movement transactions used in various components */
+export interface Transaction {
   id: string;
   toolId: string;
   toolName: string;
-  userName: string;
-  userId: string;
+  userId?: string;
+  userName?: string;
+  painterId?: string;
   painterName?: string;
   action: TransactionAction | string;
   timestamp: number;
   location?: string;
+  notes?: string;
 }
 
-// Alias for components expecting Transaction
-export type Transaction = Movement;
+/** Alias for Movement used in App.tsx, unified with Transaction interface */
+export interface Movement extends Transaction {
+  userId: string;
+  userName: string;
+  /** Union of strings used in App.tsx and TransactionAction enum values */
+  action: TransactionAction | 'retirada' | 'solicitou_devolucao' | 'confirmou_ok' | 'confirmou_defeito';
+}

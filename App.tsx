@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Tool, ToolStatus, User, UserRole, Movement } from './types';
 import { 
   LockClosedIcon, 
@@ -11,49 +11,66 @@ import {
   ShieldCheckIcon,
   ExclamationCircleIcon,
   CheckBadgeIcon,
-  UserPlusIcon
+  UserPlusIcon,
+  ArrowPathIcon,
+  MagnifyingGlassIcon,
+  PlusIcon
 } from '@heroicons/react/24/outline';
+
+/**
+ * SIMULAÇÃO DE API CENTRAL
+ * Em produção, estas funções chamariam fetch('https://sua-api.com/...')
+ */
+const CentralDB = {
+  getStore: () => {
+    const data = localStorage.getItem('PINCELPRO_CENTRAL_DB');
+    if (!data) {
+      const initialUsers = [{ id: '1', name: 'Administrador', username: 'admin', password: '123', role: UserRole.ADMIN, active: true }];
+      const initial = { users: initialUsers, tools: [], history: [] };
+      localStorage.setItem('PINCELPRO_CENTRAL_DB', JSON.stringify(initial));
+      return initial;
+    }
+    return JSON.parse(data);
+  },
+  save: (data: any) => {
+    localStorage.setItem('PINCELPRO_CENTRAL_DB', JSON.stringify(data));
+    window.dispatchEvent(new Event('storage')); // Sincroniza abas
+  }
+};
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<'inventory' | 'users' | 'history' | 'my_tools'>('inventory');
+  const [isLoading, setIsLoading] = useState(false);
   
-  // Data State
   const [users, setUsers] = useState<User[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
   const [history, setHistory] = useState<Movement[]>([]);
-  
-  // UI State
+
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [isToolModalOpen, setIsToolModalOpen] = useState(false);
 
-  // Initial Load
-  useEffect(() => {
-    const savedUsers = localStorage.getItem('p_users');
-    const savedTools = localStorage.getItem('p_tools');
-    const savedHistory = localStorage.getItem('p_history');
-    const savedSession = localStorage.getItem('p_session');
-
-    if (savedUsers) {
-      setUsers(JSON.parse(savedUsers));
-    } else {
-      const defaultAdmin: User = { id: '1', name: 'Administrador', username: 'admin', password: '123', role: UserRole.ADMIN, active: true };
-      setUsers([defaultAdmin]);
-    }
-
-    if (savedTools) setTools(JSON.parse(savedTools));
-    if (savedHistory) setHistory(JSON.parse(savedHistory));
-    if (savedSession) setCurrentUser(JSON.parse(savedSession));
+  // Sincronização com o "Banco Central"
+  const syncData = useCallback(async () => {
+    setIsLoading(true);
+    await new Promise(r => setTimeout(r, 400)); // Simula latência de rede
+    const data = CentralDB.getStore();
+    setUsers(data.users);
+    setTools(data.tools);
+    setHistory(data.history);
+    setIsLoading(false);
   }, []);
 
-  // Sync with LocalStorage
   useEffect(() => {
-    localStorage.setItem('p_users', JSON.stringify(users));
-    localStorage.setItem('p_tools', JSON.stringify(tools));
-    localStorage.setItem('p_history', JSON.stringify(history));
-  }, [users, tools, history]);
+    syncData();
+    const session = localStorage.getItem('p_session');
+    if (session) setCurrentUser(JSON.parse(session));
+
+    window.addEventListener('storage', syncData);
+    return () => window.removeEventListener('storage', syncData);
+  }, [syncData]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,11 +79,9 @@ const App: React.FC = () => {
       setCurrentUser(user);
       localStorage.setItem('p_session', JSON.stringify(user));
       setLoginError('');
-      // Direcionar para aba inicial correta baseado no role
-      if (user.role === UserRole.PAINTER) setActiveTab('my_tools');
-      else setActiveTab('inventory');
+      setActiveTab(user.role === UserRole.PAINTER ? 'my_tools' : 'inventory');
     } else {
-      setLoginError('Credenciais inválidas ou conta desativada.');
+      setLoginError('Usuário ou senha incorretos.');
     }
   };
 
@@ -75,60 +90,62 @@ const App: React.FC = () => {
     localStorage.removeItem('p_session');
   };
 
-  const registerMovement = (toolId: string, action: Movement['action'], targetStatus: ToolStatus, userId?: string) => {
+  const updateCentral = (newUsers: User[], newTools: Tool[], newHistory: Movement[]) => {
+    CentralDB.save({ users: newUsers, tools: newTools, history: newHistory });
+    setUsers(newUsers);
+    setTools(newTools);
+    setHistory(newHistory);
+  };
+
+  const registerAction = (toolId: string, action: Movement['action'], targetStatus: ToolStatus) => {
+    if (!currentUser) return;
     const tool = tools.find(t => t.id === toolId);
-    if (!tool || !currentUser) return;
+    if (!tool) return;
 
     const newMovement: Movement = {
       id: Math.random().toString(36).substr(2, 9),
       toolId,
       toolName: tool.name,
-      userId: userId || currentUser.id,
-      userName: users.find(u => u.id === (userId || currentUser.id))?.name || 'Desconhecido',
+      userId: currentUser.id,
+      userName: currentUser.name,
       action,
       timestamp: Date.now()
     };
 
-    setHistory([newMovement, ...history]);
-    setTools(tools.map(t => t.id === toolId ? { 
+    const newTools = tools.map(t => t.id === toolId ? { 
       ...t, 
       status: targetStatus, 
-      currentHolderId: action === 'Retirada' ? (userId || currentUser.id) : (action === 'Solicitou Devolução' ? t.currentHolderId : undefined),
+      currentHolderId: action === 'retirada' ? currentUser.id : (targetStatus === ToolStatus.AVAILABLE ? undefined : t.currentHolderId),
       lastUpdate: Date.now() 
-    } : t));
+    } : t);
+
+    updateCentral(users, newTools, [newMovement, ...history]);
   };
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-        <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-10 shadow-2xl">
+      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-4">
+        <div className="bg-[#1E293B] w-full max-w-sm rounded-[2rem] p-10 shadow-2xl border border-slate-800">
           <div className="text-center mb-8">
-            <div className="bg-orange-600 h-16 w-16 rounded-3xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-orange-200">
-              <LockClosedIcon className="h-8 w-8 text-white" />
+            <div className="bg-[#22C55E] h-16 w-16 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-green-900/20">
+              <LockClosedIcon className="h-8 w-8 text-[#0F172A]" />
             </div>
-            <h1 className="text-2xl font-black text-slate-800 tracking-tighter">PINCELPRO</h1>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Acesso Restrito</p>
+            <h1 className="text-2xl font-black text-white tracking-tighter">PINCELPRO</h1>
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">Sistema Central de Pintura</p>
           </div>
-          
           <form onSubmit={handleLogin} className="space-y-4">
             <input 
-              type="text" 
-              placeholder="Usuário" 
-              className="w-full bg-slate-100 border-none rounded-2xl px-6 py-4 font-bold outline-none focus:ring-2 focus:ring-orange-500 transition-all"
-              value={loginForm.username}
-              onChange={e => setLoginForm({...loginForm, username: e.target.value})}
-              required
+              type="text" placeholder="Usuário" 
+              className="w-full bg-[#0F172A] border border-slate-700 rounded-xl px-6 py-4 font-bold text-white outline-none focus:ring-2 focus:ring-[#22C55E] transition-all"
+              value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value.toLowerCase()})} required
             />
             <input 
-              type="password" 
-              placeholder="Senha" 
-              className="w-full bg-slate-100 border-none rounded-2xl px-6 py-4 font-bold outline-none focus:ring-2 focus:ring-orange-500 transition-all"
-              value={loginForm.password}
-              onChange={e => setLoginForm({...loginForm, password: e.target.value})}
-              required
+              type="password" placeholder="Senha" 
+              className="w-full bg-[#0F172A] border border-slate-700 rounded-xl px-6 py-4 font-bold text-white outline-none focus:ring-2 focus:ring-[#22C55E] transition-all"
+              value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} required
             />
-            {loginError && <p className="text-rose-600 text-[10px] font-black uppercase text-center">{loginError}</p>}
-            <button className="w-full bg-slate-800 text-white py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-black transition-all">Entrar</button>
+            {loginError && <p className="text-rose-500 text-[10px] font-black uppercase text-center">{loginError}</p>}
+            <button className="w-full bg-[#22C55E] text-[#0F172A] py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-[#16A34A] transition-all transform active:scale-95">Entrar</button>
           </form>
         </div>
       </div>
@@ -136,36 +153,35 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
+    <div className="min-h-screen bg-[#0F172A] text-slate-100 flex flex-col">
+      <header className="bg-[#1E293B]/50 backdrop-blur-md border-b border-slate-800 px-6 py-4 sticky top-0 z-30">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-3">
-            <div className="bg-orange-600 h-8 w-8 rounded-lg flex items-center justify-center">
-              <WrenchScrewdriverIcon className="h-5 w-5 text-white" />
+            <div className="bg-[#22C55E] h-9 w-9 rounded-xl flex items-center justify-center shadow-lg shadow-green-900/20">
+              <WrenchScrewdriverIcon className="h-5 w-5 text-[#0F172A]" />
             </div>
-            <h1 className="font-black text-slate-800 tracking-tight">PINCELPRO</h1>
+            <h1 className="font-black text-white tracking-tighter text-lg">PINCELPRO</h1>
+            <div className={`h-2 w-2 rounded-full ${isLoading ? 'bg-amber-400 animate-pulse' : 'bg-[#22C55E]'}`}></div>
           </div>
           <div className="flex items-center space-x-4">
             <div className="text-right hidden sm:block">
-              <p className="text-xs font-black text-slate-800 uppercase">{currentUser.name}</p>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{currentUser.role}</p>
+              <p className="text-xs font-black uppercase text-white leading-none">{currentUser.name}</p>
+              <p className="text-[10px] font-bold text-[#22C55E] uppercase mt-1 tracking-widest">{currentUser.role}</p>
             </div>
-            <button onClick={handleLogout} className="p-2 text-slate-300 hover:text-rose-500 transition-colors">
-              <ArrowRightOnRectangleIcon className="h-6 w-6" />
-            </button>
+            <button onClick={handleLogout} className="p-2 hover:text-rose-500 transition-colors"><ArrowRightOnRectangleIcon className="h-6 w-6" /></button>
           </div>
         </div>
       </header>
 
-      <nav className="bg-white border-b border-slate-100 px-6 overflow-x-auto">
+      <nav className="bg-[#0F172A] border-b border-slate-800 px-6 sticky top-[73px] z-20">
         <div className="max-w-6xl mx-auto flex">
           {currentUser.role !== UserRole.PAINTER && (
-            <Tab label="Inventário" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon={<ArchiveBoxIcon className="h-4 w-4" />} />
+            <Tab label="Estoque" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon={<ArchiveBoxIcon className="h-4 w-4" />} />
           )}
           <Tab label="Meus Itens" active={activeTab === 'my_tools'} onClick={() => setActiveTab('my_tools')} icon={<ShieldCheckIcon className="h-4 w-4" />} />
           {currentUser.role === UserRole.ADMIN && (
             <>
-              <Tab label="Usuários" active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UserGroupIcon className="h-4 w-4" />} />
+              <Tab label="Equipe" active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UserGroupIcon className="h-4 w-4" />} />
               <Tab label="Histórico" active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<ClockIcon className="h-4 w-4" />} />
             </>
           )}
@@ -176,22 +192,16 @@ const App: React.FC = () => {
         {activeTab === 'inventory' && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-black text-slate-800 uppercase">Estoque Geral</h2>
+              <h2 className="text-xl font-black uppercase tracking-tight">Canteiro Central</h2>
               {currentUser.role === UserRole.ADMIN && (
-                <button onClick={() => setIsToolModalOpen(true)} className="bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center space-x-2">
-                  <ArchiveBoxIcon className="h-4 w-4" /> <span>Novo Item</span>
+                <button onClick={() => setIsToolModalOpen(true)} className="bg-[#22C55E] text-[#0F172A] px-5 py-3 rounded-2xl text-xs font-black uppercase flex items-center space-x-2">
+                  <PlusIcon className="h-4 w-4 stroke-[3px]" /> <span>Novo Patrimônio</span>
                 </button>
               )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {tools.map(tool => (
-                <ToolCard 
-                  key={tool.id} 
-                  tool={tool} 
-                  currentUser={currentUser} 
-                  users={users} 
-                  onAction={registerMovement}
-                />
+                <ToolCard key={tool.id} tool={tool} currentUser={currentUser} users={users} onAction={registerAction} />
               ))}
             </div>
           </div>
@@ -199,57 +209,42 @@ const App: React.FC = () => {
 
         {activeTab === 'my_tools' && (
           <div className="space-y-6">
-            <h2 className="text-xl font-black text-slate-800 uppercase">Sob minha Responsabilidade</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <h2 className="text-xl font-black uppercase tracking-tight">Sob minha Guarda</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {tools.filter(t => t.currentHolderId === currentUser.id).map(tool => (
-                <ToolCard 
-                  key={tool.id} 
-                  tool={tool} 
-                  currentUser={currentUser} 
-                  users={users} 
-                  onAction={registerMovement}
-                />
+                <ToolCard key={tool.id} tool={tool} currentUser={currentUser} users={users} onAction={registerAction} />
               ))}
-              {tools.filter(t => t.currentHolderId === currentUser.id).length === 0 && (
-                <div className="col-span-full py-20 text-center opacity-20">
-                  <ShieldCheckIcon className="h-16 w-16 mx-auto mb-4" />
-                  <p className="font-black uppercase">Nenhuma ferramenta com você.</p>
-                </div>
-              )}
             </div>
           </div>
         )}
 
         {activeTab === 'users' && currentUser.role === UserRole.ADMIN && (
           <div className="space-y-6">
-             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-black text-slate-800 uppercase">Gestão de Equipe</h2>
-              <button onClick={() => setIsUserModalOpen(true)} className="bg-orange-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center space-x-2">
-                <UserPlusIcon className="h-4 w-4" /> <span>Cadastrar Usuário</span>
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-black uppercase tracking-tight">Gestão de Equipe</h2>
+              <button onClick={() => setIsUserModalOpen(true)} className="bg-[#22C55E] text-[#0F172A] px-5 py-3 rounded-2xl text-xs font-black uppercase flex items-center space-x-2">
+                <UserPlusIcon className="h-4 w-4 stroke-[3px]" /> <span>Cadastrar Pintor</span>
               </button>
             </div>
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
+            <div className="bg-[#1E293B] rounded-[2rem] border border-slate-800 overflow-hidden shadow-xl">
               <table className="w-full text-left">
-                <thead className="bg-slate-50 border-b border-slate-100">
-                  <tr className="text-[10px] font-black uppercase text-slate-400">
-                    <th className="px-6 py-4">Nome</th>
-                    <th className="px-6 py-4">Username</th>
-                    <th className="px-6 py-4">Role</th>
-                    <th className="px-6 py-4">Status</th>
+                <thead className="bg-slate-800/50 border-b border-slate-700">
+                  <tr className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                    <th className="px-8 py-5">Colaborador</th>
+                    <th className="px-8 py-5">Login</th>
+                    <th className="px-8 py-5">Nível</th>
+                    <th className="px-8 py-5 text-right">Ação</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-800">
                   {users.map(u => (
-                    <tr key={u.id}>
-                      <td className="px-6 py-4 font-bold text-slate-800">{u.name}</td>
-                      <td className="px-6 py-4 font-mono text-xs">{u.username}</td>
-                      <td className="px-6 py-4"><span className="bg-slate-100 px-2 py-1 rounded text-[10px] font-black uppercase">{u.role}</span></td>
-                      <td className="px-6 py-4">
-                        <button 
-                          onClick={() => setUsers(users.map(usr => usr.id === u.id ? {...usr, active: !usr.active} : usr))}
-                          className={`text-[9px] font-black uppercase ${u.active ? 'text-emerald-500' : 'text-rose-500'}`}
-                        >
-                          {u.active ? 'Ativo' : 'Desativado'}
+                    <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
+                      <td className="px-8 py-5 font-bold text-white">{u.name}</td>
+                      <td className="px-8 py-5 font-mono text-xs text-slate-400">{u.username}</td>
+                      <td className="px-8 py-5"><span className="bg-slate-800 px-3 py-1 rounded text-[10px] font-black uppercase border border-slate-700">{u.role}</span></td>
+                      <td className="px-8 py-5 text-right">
+                        <button onClick={() => updateCentral(users.map(usr => usr.id === u.id ? {...usr, active: !usr.active} : usr), tools, history)} className={`text-[9px] font-black uppercase px-4 py-2 rounded-xl border ${u.active ? 'text-[#22C55E] border-[#22C55E]/30' : 'text-rose-500 border-rose-500/30'}`}>
+                          {u.active ? 'Ativo' : 'Desligado'}
                         </button>
                       </td>
                     </tr>
@@ -262,17 +257,15 @@ const App: React.FC = () => {
 
         {activeTab === 'history' && currentUser.role === UserRole.ADMIN && (
           <div className="space-y-6">
-            <h2 className="text-xl font-black text-slate-800 uppercase">Linha do Tempo</h2>
-            <div className="space-y-4">
+            <h2 className="text-xl font-black uppercase tracking-tight">Registro de Movimentações</h2>
+            <div className="space-y-3">
               {history.map(m => (
-                <div key={m.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+                <div key={m.id} className="bg-[#1E293B] p-5 rounded-2xl border border-slate-800 flex items-center justify-between shadow-lg">
                   <div className="flex items-center space-x-4">
-                    <div className="h-10 w-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400">
-                      <ClockIcon className="h-5 w-5" />
-                    </div>
+                    <div className="bg-slate-800 h-10 w-10 rounded-xl flex items-center justify-center text-[#22C55E]"><ClockIcon className="h-5 w-5" /></div>
                     <div>
-                      <p className="text-sm font-bold text-slate-800">{m.userName} {m.action.toLowerCase()} {m.toolName}</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase">{new Date(m.timestamp).toLocaleString()}</p>
+                      <p className="text-sm font-bold text-white"><span className="text-[#22C55E]">{m.userName}</span> {m.action.replace('_', ' ')} <span className="text-white opacity-60">{m.toolName}</span></p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">{new Date(m.timestamp).toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
@@ -284,97 +277,65 @@ const App: React.FC = () => {
 
       {/* Modals */}
       {isUserModalOpen && (
-        <Modal title="Novo Usuário" onClose={() => setIsUserModalOpen(false)}>
-           <UserForm onAdd={u => { setUsers([...users, u]); setIsUserModalOpen(false); }} />
+        <Modal title="Cadastrar Pintor" onClose={() => setIsUserModalOpen(false)}>
+          <UserForm onAdd={u => { updateCentral([...users, u], tools, history); setIsUserModalOpen(false); }} />
         </Modal>
       )}
-
       {isToolModalOpen && (
-        <Modal title="Nova Ferramenta" onClose={() => setIsToolModalOpen(false)}>
-           <ToolForm onAdd={t => { setTools([...tools, t]); setIsToolModalOpen(false); }} />
+        <Modal title="Novo Patrimônio" onClose={() => setIsToolModalOpen(false)}>
+          <ToolForm onAdd={t => { updateCentral(users, [...tools, t], history); setIsToolModalOpen(false); }} />
         </Modal>
       )}
     </div>
   );
 };
 
+// Subcomponentes Customizados
+
 const Tab = ({ label, active, onClick, icon }: any) => (
-  <button 
-    onClick={onClick}
-    className={`px-6 py-4 flex items-center space-x-2 text-xs font-black uppercase tracking-tighter transition-all border-b-2 ${
-      active ? 'text-orange-600 border-orange-600' : 'text-slate-400 border-transparent hover:text-slate-600'
-    }`}
-  >
+  <button onClick={onClick} className={`px-8 py-5 flex items-center space-x-2 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${active ? 'text-[#22C55E] border-[#22C55E]' : 'text-slate-500 border-transparent hover:text-slate-300'}`}>
     {icon} <span>{label}</span>
   </button>
 );
 
 const ToolCard = ({ tool, currentUser, users, onAction }: any) => {
   const holder = users.find((u: User) => u.id === tool.currentHolderId);
-  const canWithdraw = tool.status === ToolStatus.AVAILABLE && currentUser.role !== UserRole.CONFEREE;
-  const canRequestReturn = tool.status === ToolStatus.IN_USE && tool.currentHolderId === currentUser.id;
-  const canConfer = tool.status === ToolStatus.PENDING_CONFERENCE && currentUser.role !== UserRole.PAINTER;
-
+  const isHolder = tool.currentHolderId === currentUser.id;
+  const isPainter = currentUser.role === UserRole.PAINTER;
+  
   return (
-    <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col justify-between">
+    <div className="bg-[#1E293B] p-6 rounded-[2rem] border border-slate-800 shadow-xl flex flex-col justify-between hover:border-[#22C55E]/30 transition-all">
       <div>
         <div className="flex justify-between items-start mb-4">
-          <span className={`px-2 py-1 rounded text-[8px] font-black uppercase ${
-            tool.status === ToolStatus.AVAILABLE ? 'bg-emerald-50 text-emerald-600' :
-            tool.status === ToolStatus.IN_USE ? 'bg-blue-50 text-blue-600' :
-            tool.status === ToolStatus.PENDING_CONFERENCE ? 'bg-amber-50 text-amber-600' : 'bg-rose-50 text-rose-600'
-          }`}>{tool.status}</span>
-          <span className="text-[10px] font-mono text-slate-300">#{tool.id}</span>
+          <span className={`px-2.5 py-1 rounded text-[9px] font-black uppercase border ${
+            tool.status === ToolStatus.AVAILABLE ? 'bg-[#22C55E]/10 text-[#22C55E] border-[#22C55E]/20' :
+            tool.status === ToolStatus.OUT ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+          }`}>{tool.status.replace('_', ' ')}</span>
+          <span className="text-[10px] font-bold text-slate-600">#{tool.id}</span>
         </div>
-        <h3 className="text-lg font-black text-slate-800 leading-tight mb-1 uppercase tracking-tight">{tool.name}</h3>
-        <p className="text-[10px] text-slate-400 font-black uppercase mb-4">{tool.category} • {tool.model}</p>
-
+        <h3 className="text-lg font-black text-white uppercase tracking-tight">{tool.name}</h3>
+        <p className="text-[10px] text-slate-500 font-bold uppercase mb-5">{tool.category} • {tool.model}</p>
         {holder && (
-          <div className="bg-slate-50 p-3 rounded-xl mb-6 border border-slate-100 flex items-center space-x-2">
-            <div className="h-6 w-6 rounded-full bg-orange-100 flex items-center justify-center text-[10px] font-bold text-orange-600">{holder.name[0]}</div>
-            <div>
-              <p className="text-[8px] font-black text-slate-300 uppercase leading-none">Em posse de:</p>
-              <p className="text-xs font-bold text-slate-700">{holder.name}</p>
-            </div>
+          <div className="bg-[#0F172A] p-3 rounded-xl mb-6 border border-slate-800 flex items-center space-x-3">
+            <div className="h-6 w-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold text-[#22C55E]">{holder.name[0]}</div>
+            <p className="text-[11px] font-bold text-slate-300">{holder.name}</p>
           </div>
         )}
       </div>
-
       <div className="space-y-2">
-        {canWithdraw && (
-          <button 
-            onClick={() => onAction(tool.id, 'Retirada', ToolStatus.IN_USE)}
-            className="w-full py-3 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black"
-          >
-            Retirar Agora
-          </button>
+        {tool.status === ToolStatus.AVAILABLE && !isPainter && (
+           <p className="text-[9px] text-slate-500 text-center uppercase font-black italic">Aguardando Pintor retirar</p>
         )}
-
-        {canRequestReturn && (
-          <button 
-            onClick={() => onAction(tool.id, 'Solicitou Devolução', ToolStatus.PENDING_CONFERENCE)}
-            className="w-full py-3 bg-orange-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
-          >
-            Sinalizar Devolução
-          </button>
+        {tool.status === ToolStatus.AVAILABLE && isPainter && (
+          <button onClick={() => onAction(tool.id, 'retirada', ToolStatus.OUT)} className="w-full py-4 bg-[#22C55E] text-[#0F172A] rounded-2xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all">Retirar Ativo</button>
         )}
-
-        {canConfer && (
+        {tool.status === ToolStatus.OUT && isHolder && (
+          <button onClick={() => onAction(tool.id, 'solicitou_devolucao', ToolStatus.PENDING_RETURN)} className="w-full py-4 bg-indigo-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">Sinalizar Devolução</button>
+        )}
+        {tool.status === ToolStatus.PENDING_RETURN && currentUser.role !== UserRole.PAINTER && (
           <div className="grid grid-cols-2 gap-2">
-            <button 
-              onClick={() => onAction(tool.id, 'Confirmou OK', ToolStatus.AVAILABLE)}
-              className="flex flex-col items-center justify-center py-3 bg-emerald-600 text-white rounded-xl"
-            >
-              <CheckBadgeIcon className="h-4 w-4 mb-1" />
-              <span className="text-[9px] font-black uppercase">Tudo OK</span>
-            </button>
-            <button 
-              onClick={() => onAction(tool.id, 'Confirmou Defeito', ToolStatus.DEFECTIVE)}
-              className="flex flex-col items-center justify-center py-3 bg-rose-600 text-white rounded-xl"
-            >
-              <ExclamationCircleIcon className="h-4 w-4 mb-1" />
-              <span className="text-[9px] font-black uppercase">Defeito</span>
-            </button>
+            <button onClick={() => onAction(tool.id, 'confirmou_ok', ToolStatus.AVAILABLE)} className="bg-[#22C55E] text-[#0F172A] py-3 rounded-xl flex flex-col items-center justify-center"><CheckBadgeIcon className="h-4 w-4" /><span className="text-[8px] font-black uppercase">Tudo OK</span></button>
+            <button onClick={() => onAction(tool.id, 'confirmou_defeito', ToolStatus.DEFECTIVE)} className="bg-rose-500 text-white py-3 rounded-xl flex flex-col items-center justify-center"><ExclamationCircleIcon className="h-4 w-4" /><span className="text-[8px] font-black uppercase">Avaria</span></button>
           </div>
         )}
       </div>
@@ -383,11 +344,11 @@ const ToolCard = ({ tool, currentUser, users, onAction }: any) => {
 };
 
 const Modal = ({ title, onClose, children }: any) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-    <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-10 shadow-2xl relative">
-      <h2 className="text-xl font-black text-slate-800 uppercase mb-6 tracking-tight">{title}</h2>
+  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+    <div className="bg-[#1E293B] w-full max-w-sm rounded-[2.5rem] p-10 shadow-2xl border border-slate-800 animate-in fade-in zoom-in duration-200">
+      <h2 className="text-xl font-black text-white uppercase mb-8 tracking-tighter">{title}</h2>
       {children}
-      <button onClick={onClose} className="mt-4 w-full text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">Fechar</button>
+      <button onClick={onClose} className="mt-6 w-full text-center text-[10px] font-black text-slate-500 hover:text-slate-300 uppercase tracking-widest">Fechar Janela</button>
     </div>
   </div>
 );
@@ -395,33 +356,33 @@ const Modal = ({ title, onClose, children }: any) => (
 const UserForm = ({ onAdd }: any) => {
   const [form, setForm] = useState({ name: '', username: '', password: '', role: UserRole.PAINTER });
   return (
-    <div className="space-y-3">
-      <input placeholder="Nome Completo" className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, name: e.target.value})} />
-      <input placeholder="Username" className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, username: e.target.value})} />
-      <input placeholder="Senha" type="password" className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, password: e.target.value})} />
-      <select className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, role: e.target.value as UserRole})}>
+    <div className="space-y-4">
+      <input placeholder="Nome Completo" className="w-full bg-[#0F172A] p-4 rounded-xl outline-none font-bold text-sm text-white border border-slate-700" onChange={e => setForm({...form, name: e.target.value})} />
+      <input placeholder="Username" className="w-full bg-[#0F172A] p-4 rounded-xl outline-none font-bold text-sm text-white border border-slate-700" onChange={e => setForm({...form, username: e.target.value.toLowerCase()})} />
+      <input placeholder="Senha" type="password" className="w-full bg-[#0F172A] p-4 rounded-xl outline-none font-bold text-sm text-white border border-slate-700" onChange={e => setForm({...form, password: e.target.value})} />
+      <select className="w-full bg-[#0F172A] p-4 rounded-xl outline-none font-bold text-sm text-white border border-slate-700" onChange={e => setForm({...form, role: e.target.value as UserRole})}>
         <option value={UserRole.PAINTER}>Pintor</option>
         <option value={UserRole.CONFEREE}>Conferente</option>
         <option value={UserRole.ADMIN}>Administrador</option>
       </select>
-      <button onClick={() => onAdd({ ...form, id: Date.now().toString(), active: true })} className="w-full py-4 bg-orange-600 text-white rounded-xl font-black uppercase text-xs">Salvar</button>
+      <button onClick={() => onAdd({ ...form, id: Date.now().toString(), active: true })} className="w-full py-5 bg-[#22C55E] text-[#0F172A] rounded-2xl font-black uppercase text-xs">Confirmar Cadastro</button>
     </div>
   );
 };
 
 const ToolForm = ({ onAdd }: any) => {
-  const [form, setForm] = useState({ name: '', model: '', category: 'Acesso' });
+  const [form, setForm] = useState({ name: '', model: '', category: 'Pintura' });
   return (
-    <div className="space-y-3">
-      <input placeholder="Nome da Ferramenta" className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, name: e.target.value})} />
-      <input placeholder="Modelo" className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, model: e.target.value})} />
-      <select className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, category: e.target.value})}>
+    <div className="space-y-4">
+      <input placeholder="Nome da Ferramenta" className="w-full bg-[#0F172A] p-4 rounded-xl outline-none font-bold text-sm text-white border border-slate-700" onChange={e => setForm({...form, name: e.target.value})} />
+      <input placeholder="Modelo/Especificação" className="w-full bg-[#0F172A] p-4 rounded-xl outline-none font-bold text-sm text-white border border-slate-700" onChange={e => setForm({...form, model: e.target.value})} />
+      <select className="w-full bg-[#0F172A] p-4 rounded-xl outline-none font-bold text-sm text-white border border-slate-700" onChange={e => setForm({...form, category: e.target.value})}>
+        <option>Pintura</option>
         <option>Acesso</option>
-        <option>Pintura Mecanizada</option>
         <option>Preparação</option>
         <option>Manual</option>
       </select>
-      <button onClick={() => onAdd({ ...form, id: Math.floor(Math.random() * 9000 + 1000).toString(), status: ToolStatus.AVAILABLE, lastUpdate: Date.now() })} className="w-full py-4 bg-slate-800 text-white rounded-xl font-black uppercase text-xs">Adicionar</button>
+      <button onClick={() => onAdd({ ...form, id: Math.floor(Math.random() * 9000 + 1000).toString(), status: ToolStatus.AVAILABLE, lastUpdate: Date.now() })} className="w-full py-5 bg-[#22C55E] text-[#0F172A] rounded-2xl font-black uppercase text-xs">Salvar Patrimônio</button>
     </div>
   );
 };
