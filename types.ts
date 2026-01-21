@@ -1,23 +1,28 @@
 
+// PincelPro - Central Types Definition
+
 export enum ToolStatus {
   AVAILABLE = 'disponível',
-  OUT = 'em campo',
-  PENDING_RETURN = 'aguardando conferência',
+  OUT = 'emprestado',
+  PENDING_RETURN = 'aguardando_conferencia',
   DEFECTIVE = 'defeito',
-  MAINTENANCE = 'manutenção',
-  LOST = 'perdida',
-  PENDING_WITHDRAWAL = 'aguardando retirada'
+  LOST = 'perdido',
+  /** Status used for tools awaiting approval of withdrawal */
+  PENDING_WITHDRAWAL = 'pendente_retirada'
 }
 
 export enum UserRole {
   ADMIN = 'admin',
-  MANAGER = 'admin',
-  PAINTER = 'pintor'
+  PAINTER = 'pintor',
+  CONFEREE = 'conferente',
+  /** Manager role used in Dashboard and ToolInventory components */
+  MANAGER = 'manager'
 }
 
+/** Type of employment or contract for painters */
 export enum PainterType {
   EMPLOYEE = 'CLT',
-  CONTRACTOR = 'Parceiro'
+  CONTRACTOR = 'Terceirizado'
 }
 
 export interface User {
@@ -27,11 +32,12 @@ export interface User {
   password?: string;
   role: UserRole;
   active: boolean;
-  totalDebt?: number; // Valor acumulado de aluguéis
-  type?: PainterType;
 }
 
-export type Painter = User;
+/** Interface representing a Painter, extending base User */
+export interface Painter extends User {
+  type?: PainterType;
+}
 
 export interface Tool {
   id: string;
@@ -39,37 +45,43 @@ export interface Tool {
   model: string;
   category: string;
   status: ToolStatus;
-  dailyRate: number; // Valor do aluguel por dia
   currentHolderId?: string;
   lastUpdate: number;
-  withdrawDate?: number; // Timestamp de quando foi retirada
-  isDeleted?: boolean; // Exclusão lógica
-  location?: string;
+  /** Optional specifications/notes about the tool */
   specifications?: string;
+  /** Current location or site where the tool is being used */
+  location?: string;
 }
 
+/** Predefined actions for tool movement records */
 export enum TransactionAction {
   REQUEST_WITHDRAWAL = 'Solicitou Retirada',
-  APPROVE_WITHDRAWAL = 'Aprovação de Saída',
+  APPROVE_WITHDRAWAL = 'Aprovou Retirada',
   REQUEST_RETURN = 'Solicitou Devolução',
   CONFIRM_RETURN_OK = 'Confirmou OK',
-  CONFIRM_RETURN_DEFECT = 'Confirmou com Defeito',
-  MARK_LOST = 'Registrada Perda'
+  CONFIRM_RETURN_DEFECT = 'Confirmou Defeito',
+  MARK_LOST = 'Perda/Sumida'
 }
 
-export interface Movement {
+/** Interface for tool movement transactions used in various components */
+export interface Transaction {
   id: string;
   toolId: string;
   toolName: string;
-  userId: string;
-  userName: string;
+  userId?: string;
+  userName?: string;
+  painterId?: string;
   painterName?: string;
-  action: TransactionAction | 'retirada' | 'devolução' | 'manutenção';
+  action: TransactionAction | string;
   timestamp: number;
-  daysUsed?: number;
-  cost?: number; // Custo calculado deste aluguel
-  statusAtTime?: ToolStatus;
   location?: string;
+  notes?: string;
 }
 
-export type Transaction = Movement;
+/** Alias for Movement used in App.tsx, unified with Transaction interface */
+export interface Movement extends Transaction {
+  userId: string;
+  userName: string;
+  /** Union of strings used in App.tsx and TransactionAction enum values */
+  action: TransactionAction | 'retirada' | 'solicitou_devolucao' | 'confirmou_ok' | 'confirmou_defeito';
+}

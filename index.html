@@ -3,9 +3,8 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#22C55E" />
-    <link rel="manifest" href="./manifest.json">
     <title>PincelPro - Gestão Corporativa</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
@@ -14,16 +13,12 @@
         font-family: 'Inter', sans-serif; 
         background-color: #0F172A; 
         color: #F9FAFB;
-        overflow-x: hidden;
       }
-      * { -webkit-tap-highlight-color: transparent; }
-      ::-webkit-scrollbar { width: 6px; height: 6px; }
-      ::-webkit-scrollbar-track { background: #0F172A; }
-      ::-webkit-scrollbar-thumb { background: #1F2933; border-radius: 10px; }
+      .app-container { max-width: 1200px; margin: 0 auto; }
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: #1E293B; }
+      ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
       ::-webkit-scrollbar-thumb:hover { background: #22C55E; }
-      
-      /* Smooth transitions for tabs and buttons */
-      button, a { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
     </style>
   <script type="importmap">
 {
