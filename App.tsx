@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Tool, ToolStatus, User, UserRole, Movement } from './types';
-import { 
+import { supabase } from './src/lib/supabase'; 
   LockClosedIcon, 
   WrenchScrewdriverIcon, 
   UserGroupIcon, 
@@ -41,6 +41,8 @@ const StorageService = {
 const CATEGORIES = ['Escadas', 'Desempenadeiras', 'Rolos', 'Lixas', 'Pistolas', 'Outros'];
 
 const App: React.FC = () => {
+    console.log('supabase:', supabase);
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loginForm, setLoginForm] = useState({ user: '', pass: '' });
   const [loginError, setLoginError] = useState('');
