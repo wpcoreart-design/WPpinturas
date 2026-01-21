@@ -2,69 +2,76 @@
 export enum ToolStatus {
   AVAILABLE = 'Disponível',
   IN_USE = 'Em Uso',
+  OUT = 'Em Campo',
+  PENDING_CONFERENCE = 'Aguardando Conferência',
+  PENDING_RETURN = 'Aguardando Conferência',
+  PENDING_WITHDRAWAL = 'Aguardando Retirada',
   DEFECTIVE = 'Com Defeito',
   MAINTENANCE = 'Manutenção',
-  OUT = 'Em Campo',
-  LOST = 'Sumida',
-  PENDING_RETURN = 'Pendente Devolução',
-  PENDING_WITHDRAWAL = 'Pendente Saída'
+  LOST = 'Perda/Sumida'
+}
+
+export enum UserRole {
+  ADMIN = 'admin',
+  MANAGER = 'admin',
+  PAINTER = 'pintor',
+  CONFEREE = 'conferente'
 }
 
 export enum PainterType {
   EMPLOYEE = 'Funcionário',
-  CONTRACTOR = 'Prestador'
+  CONTRACTOR = 'Terceirizado'
 }
 
-export enum UserRole {
-  MANAGER = 'Manager',
-  PAINTER = 'Painter'
+export interface User {
+  id: string;
+  name: string;
+  username: string;
+  password?: string;
+  role: UserRole;
+  active: boolean;
+  type?: PainterType;
 }
 
-export enum TransactionAction {
-  REQUEST_WITHDRAWAL = 'Solicitou Retirada',
-  APPROVE_WITHDRAWAL = 'Aprovar Saída',
-  REQUEST_RETURN = 'Solicitou Devolução',
-  CONFIRM_RETURN_OK = 'Confirmou Devolução OK',
-  CONFIRM_RETURN_DEFECT = 'Confirmar Devolução com Defeito',
-  MARK_LOST = 'Marcar como Perdida'
-}
+// Alias for components expecting Painter
+export type Painter = User;
 
 export interface Tool {
   id: string;
   name: string;
   model: string;
-  specifications?: string;
   category: string;
   status: ToolStatus;
   currentHolderId?: string;
   lastUpdate: number;
+  specifications?: string;
   location?: string;
 }
 
-export interface Painter {
-  id: string;
-  name: string;
-  type: PainterType;
+export enum TransactionAction {
+  RETIRADA = 'Retirada',
+  SOLICITOU_DEVOLUCAO = 'Solicitou Devolução',
+  CONFIRMOU_OK = 'Confirmou OK',
+  CONFIRMOU_DEFEITO = 'Confirmou Defeito',
+  REQUEST_WITHDRAWAL = 'Solicitou Retirada',
+  APPROVE_WITHDRAWAL = 'Aprovou Retirada',
+  REQUEST_RETURN = 'Solicitou Devolução',
+  CONFIRM_RETURN_OK = 'Confirmou OK',
+  CONFIRM_RETURN_DEFECT = 'Confirmou Defeito',
+  MARK_LOST = 'Marcou como Perdida'
 }
 
 export interface Movement {
   id: string;
   toolId: string;
   toolName: string;
-  painterName: string;
-  type: 'Retirada' | 'Devolução OK' | 'Defeito';
-  timestamp: number;
-  notes?: string;
-}
-
-export interface Transaction {
-  id: string;
-  toolId: string;
-  toolName: string;
-  painterId?: string;
-  painterName: string;
-  action: TransactionAction;
+  userName: string;
+  userId: string;
+  painterName?: string;
+  action: TransactionAction | string;
   timestamp: number;
   location?: string;
-  notes?: string;
 }
+
+// Alias for components expecting Transaction
+export type Transaction = Movement;

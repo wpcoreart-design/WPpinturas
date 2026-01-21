@@ -1,327 +1,427 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Tool, Painter, Movement, ToolStatus, PainterType } from './types';
+import React, { useState, useEffect } from 'react';
+import { Tool, ToolStatus, User, UserRole, Movement } from './types';
 import { 
+  LockClosedIcon, 
   WrenchScrewdriverIcon, 
   UserGroupIcon, 
-  ArrowsRightLeftIcon, 
-  PlusIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  ArchiveBoxIcon,
-  TrashIcon
+  ArchiveBoxIcon, 
+  ClockIcon, 
+  ArrowRightOnRectangleIcon,
+  ShieldCheckIcon,
+  ExclamationCircleIcon,
+  CheckBadgeIcon,
+  UserPlusIcon
 } from '@heroicons/react/24/outline';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'tools' | 'painters' | 'history'>('tools');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState<'inventory' | 'users' | 'history' | 'my_tools'>('inventory');
+  
+  // Data State
+  const [users, setUsers] = useState<User[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
-  const [painters, setPainters] = useState<Painter[]>([]);
   const [history, setHistory] = useState<Movement[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isPainterModalOpen, setIsPainterModalOpen] = useState(false);
+  
+  // UI State
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [loginError, setLoginError] = useState('');
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [isToolModalOpen, setIsToolModalOpen] = useState(false);
 
-  // Carregar dados iniciais
+  // Initial Load
   useEffect(() => {
-    const savedTools = localStorage.getItem('pincelpro_tools');
-    const savedPainters = localStorage.getItem('pincelpro_painters');
-    const savedHistory = localStorage.getItem('pincelpro_history');
+    const savedUsers = localStorage.getItem('p_users');
+    const savedTools = localStorage.getItem('p_tools');
+    const savedHistory = localStorage.getItem('p_history');
+    const savedSession = localStorage.getItem('p_session');
+
+    if (savedUsers) {
+      setUsers(JSON.parse(savedUsers));
+    } else {
+      const defaultAdmin: User = { id: '1', name: 'Administrador', username: 'admin', password: '123', role: UserRole.ADMIN, active: true };
+      setUsers([defaultAdmin]);
+    }
 
     if (savedTools) setTools(JSON.parse(savedTools));
-    else setTools([
-      { id: '1', name: 'Escada Articulada 12D', model: 'Articulada', category: 'Acesso', status: ToolStatus.AVAILABLE, lastUpdate: Date.now() },
-      { id: '2', name: 'Máquina Airless Graco', model: '390 PC', category: 'Pintura', status: ToolStatus.AVAILABLE, lastUpdate: Date.now() },
-      { id: '3', name: 'Lixadeira de Parede', model: 'W750', category: 'Preparação', status: ToolStatus.DEFECTIVE, lastUpdate: Date.now() }
-    ]);
-
-    if (savedPainters) setPainters(JSON.parse(savedPainters));
-    else setPainters([
-      { id: 'p1', name: 'Ricardo Oliveira', type: PainterType.EMPLOYEE },
-      { id: 'p2', name: 'Marcos Silva', type: PainterType.CONTRACTOR }
-    ]);
-
     if (savedHistory) setHistory(JSON.parse(savedHistory));
+    if (savedSession) setCurrentUser(JSON.parse(savedSession));
   }, []);
 
-  // Salvar automaticamente
+  // Sync with LocalStorage
   useEffect(() => {
-    localStorage.setItem('pincelpro_tools', JSON.stringify(tools));
-    localStorage.setItem('pincelpro_painters', JSON.stringify(painters));
-    localStorage.setItem('pincelpro_history', JSON.stringify(history));
-  }, [tools, painters, history]);
+    localStorage.setItem('p_users', JSON.stringify(users));
+    localStorage.setItem('p_tools', JSON.stringify(tools));
+    localStorage.setItem('p_history', JSON.stringify(history));
+  }, [users, tools, history]);
 
-  const registerMovement = (toolId: string, type: 'Retirada' | 'Devolução OK' | 'Defeito', painterId?: string) => {
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const user = users.find(u => u.username === loginForm.username && u.password === loginForm.password && u.active);
+    if (user) {
+      setCurrentUser(user);
+      localStorage.setItem('p_session', JSON.stringify(user));
+      setLoginError('');
+      // Direcionar para aba inicial correta baseado no role
+      if (user.role === UserRole.PAINTER) setActiveTab('my_tools');
+      else setActiveTab('inventory');
+    } else {
+      setLoginError('Credenciais inválidas ou conta desativada.');
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('p_session');
+  };
+
+  const registerMovement = (toolId: string, action: Movement['action'], targetStatus: ToolStatus, userId?: string) => {
     const tool = tools.find(t => t.id === toolId);
-    const painter = painters.find(p => p.id === (painterId || tool?.currentHolderId));
-    
-    if (!tool || (!painter && type === 'Retirada')) return;
+    if (!tool || !currentUser) return;
 
     const newMovement: Movement = {
       id: Math.random().toString(36).substr(2, 9),
       toolId,
       toolName: tool.name,
-      painterName: painter?.name || 'Sistema',
-      type,
+      userId: userId || currentUser.id,
+      userName: users.find(u => u.id === (userId || currentUser.id))?.name || 'Desconhecido',
+      action,
       timestamp: Date.now()
     };
 
     setHistory([newMovement, ...history]);
-    setTools(tools.map(t => {
-      if (t.id === toolId) {
-        return {
-          ...t,
-          status: type === 'Retirada' ? ToolStatus.IN_USE : 
-                  type === 'Devolução OK' ? ToolStatus.AVAILABLE : ToolStatus.DEFECTIVE,
-          currentHolderId: type === 'Retirada' ? painterId : undefined,
-          lastUpdate: Date.now()
-        };
-      }
-      return t;
-    }));
+    setTools(tools.map(t => t.id === toolId ? { 
+      ...t, 
+      status: targetStatus, 
+      currentHolderId: action === 'Retirada' ? (userId || currentUser.id) : (action === 'Solicitou Devolução' ? t.currentHolderId : undefined),
+      lastUpdate: Date.now() 
+    } : t));
   };
 
-  return (
-    <div className="min-h-screen pb-20 md:pb-0">
-      {/* Header */}
-      <header className="bg-orange-600 text-white p-6 shadow-lg">
-        <div className="app-container flex justify-between items-center">
-          <div className="flex items-center space-x-3">
-            <WrenchScrewdriverIcon className="h-8 w-8" />
-            <h1 className="text-2xl font-extrabold tracking-tighter">PINCELPRO</h1>
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+        <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-10 shadow-2xl">
+          <div className="text-center mb-8">
+            <div className="bg-orange-600 h-16 w-16 rounded-3xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-orange-200">
+              <LockClosedIcon className="h-8 w-8 text-white" />
+            </div>
+            <h1 className="text-2xl font-black text-slate-800 tracking-tighter">PINCELPRO</h1>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Acesso Restrito</p>
           </div>
-          <div className="text-xs font-bold bg-orange-700 px-3 py-1 rounded-full uppercase tracking-widest">Controle de Frota</div>
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <input 
+              type="text" 
+              placeholder="Usuário" 
+              className="w-full bg-slate-100 border-none rounded-2xl px-6 py-4 font-bold outline-none focus:ring-2 focus:ring-orange-500 transition-all"
+              value={loginForm.username}
+              onChange={e => setLoginForm({...loginForm, username: e.target.value})}
+              required
+            />
+            <input 
+              type="password" 
+              placeholder="Senha" 
+              className="w-full bg-slate-100 border-none rounded-2xl px-6 py-4 font-bold outline-none focus:ring-2 focus:ring-orange-500 transition-all"
+              value={loginForm.password}
+              onChange={e => setLoginForm({...loginForm, password: e.target.value})}
+              required
+            />
+            {loginError && <p className="text-rose-600 text-[10px] font-black uppercase text-center">{loginError}</p>}
+            <button className="w-full bg-slate-800 text-white py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-black transition-all">Entrar</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <div className="flex items-center space-x-3">
+            <div className="bg-orange-600 h-8 w-8 rounded-lg flex items-center justify-center">
+              <WrenchScrewdriverIcon className="h-5 w-5 text-white" />
+            </div>
+            <h1 className="font-black text-slate-800 tracking-tight">PINCELPRO</h1>
+          </div>
+          <div className="flex items-center space-x-4">
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-black text-slate-800 uppercase">{currentUser.name}</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{currentUser.role}</p>
+            </div>
+            <button onClick={handleLogout} className="p-2 text-slate-300 hover:text-rose-500 transition-colors">
+              <ArrowRightOnRectangleIcon className="h-6 w-6" />
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="app-container p-4 md:p-8">
-        {/* Navigation Tabs */}
-        <div className="flex bg-white rounded-2xl p-1 shadow-sm mb-8 border border-slate-200">
-          <TabButton active={activeTab === 'tools'} onClick={() => setActiveTab('tools')} icon={<ArchiveBoxIcon className="h-5 w-5" />} label="Ferramentas" />
-          <TabButton active={activeTab === 'painters'} onClick={() => setActiveTab('painters')} icon={<UserGroupIcon className="h-5 w-5" />} label="Pintores" />
-          <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<ArrowsRightLeftIcon className="h-5 w-5" />} label="Histórico" />
+      <nav className="bg-white border-b border-slate-100 px-6 overflow-x-auto">
+        <div className="max-w-6xl mx-auto flex">
+          {currentUser.role !== UserRole.PAINTER && (
+            <Tab label="Inventário" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon={<ArchiveBoxIcon className="h-4 w-4" />} />
+          )}
+          <Tab label="Meus Itens" active={activeTab === 'my_tools'} onClick={() => setActiveTab('my_tools')} icon={<ShieldCheckIcon className="h-4 w-4" />} />
+          {currentUser.role === UserRole.ADMIN && (
+            <>
+              <Tab label="Usuários" active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UserGroupIcon className="h-4 w-4" />} />
+              <Tab label="Histórico" active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<ClockIcon className="h-4 w-4" />} />
+            </>
+          )}
         </div>
+      </nav>
 
-        {activeTab === 'tools' && (
+      <main className="max-w-6xl mx-auto w-full p-6 flex-1">
+        {activeTab === 'inventory' && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold text-slate-800 uppercase tracking-tight">Estoque de Obra</h2>
-              <button onClick={() => setIsModalOpen(true)} className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold flex items-center space-x-2 hover:bg-orange-700 transition-colors">
-                <PlusIcon className="h-5 w-5" />
-                <span>Nova Ferramenta</span>
-              </button>
+              <h2 className="text-xl font-black text-slate-800 uppercase">Estoque Geral</h2>
+              {currentUser.role === UserRole.ADMIN && (
+                <button onClick={() => setIsToolModalOpen(true)} className="bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center space-x-2">
+                  <ArchiveBoxIcon className="h-4 w-4" /> <span>Novo Item</span>
+                </button>
+              )}
             </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {tools.map(tool => (
                 <ToolCard 
                   key={tool.id} 
                   tool={tool} 
-                  painters={painters} 
+                  currentUser={currentUser} 
+                  users={users} 
                   onAction={registerMovement}
-                  onDelete={(id) => setTools(tools.filter(t => t.id !== id))}
                 />
               ))}
             </div>
           </div>
         )}
 
-        {activeTab === 'painters' && (
+        {activeTab === 'my_tools' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold text-slate-800 uppercase tracking-tight">Equipe de Pintura</h2>
-              <button onClick={() => setIsPainterModalOpen(true)} className="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold flex items-center space-x-2">
-                <PlusIcon className="h-5 w-5" />
-                <span>Adicionar Pintor</span>
+            <h2 className="text-xl font-black text-slate-800 uppercase">Sob minha Responsabilidade</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {tools.filter(t => t.currentHolderId === currentUser.id).map(tool => (
+                <ToolCard 
+                  key={tool.id} 
+                  tool={tool} 
+                  currentUser={currentUser} 
+                  users={users} 
+                  onAction={registerMovement}
+                />
+              ))}
+              {tools.filter(t => t.currentHolderId === currentUser.id).length === 0 && (
+                <div className="col-span-full py-20 text-center opacity-20">
+                  <ShieldCheckIcon className="h-16 w-16 mx-auto mb-4" />
+                  <p className="font-black uppercase">Nenhuma ferramenta com você.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'users' && currentUser.role === UserRole.ADMIN && (
+          <div className="space-y-6">
+             <div className="flex justify-between items-center">
+              <h2 className="text-xl font-black text-slate-800 uppercase">Gestão de Equipe</h2>
+              <button onClick={() => setIsUserModalOpen(true)} className="bg-orange-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center space-x-2">
+                <UserPlusIcon className="h-4 w-4" /> <span>Cadastrar Usuário</span>
               </button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {painters.map(painter => (
-                <div key={painter.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
+            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b border-slate-100">
+                  <tr className="text-[10px] font-black uppercase text-slate-400">
+                    <th className="px-6 py-4">Nome</th>
+                    <th className="px-6 py-4">Username</th>
+                    <th className="px-6 py-4">Role</th>
+                    <th className="px-6 py-4">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {users.map(u => (
+                    <tr key={u.id}>
+                      <td className="px-6 py-4 font-bold text-slate-800">{u.name}</td>
+                      <td className="px-6 py-4 font-mono text-xs">{u.username}</td>
+                      <td className="px-6 py-4"><span className="bg-slate-100 px-2 py-1 rounded text-[10px] font-black uppercase">{u.role}</span></td>
+                      <td className="px-6 py-4">
+                        <button 
+                          onClick={() => setUsers(users.map(usr => usr.id === u.id ? {...usr, active: !usr.active} : usr))}
+                          className={`text-[9px] font-black uppercase ${u.active ? 'text-emerald-500' : 'text-rose-500'}`}
+                        >
+                          {u.active ? 'Ativo' : 'Desativado'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'history' && currentUser.role === UserRole.ADMIN && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-black text-slate-800 uppercase">Linha do Tempo</h2>
+            <div className="space-y-4">
+              {history.map(m => (
+                <div key={m.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
                   <div className="flex items-center space-x-4">
-                    <div className="h-12 w-12 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 font-bold text-xl">{painter.name[0]}</div>
+                    <div className="h-10 w-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400">
+                      <ClockIcon className="h-5 w-5" />
+                    </div>
                     <div>
-                      <h3 className="font-bold text-slate-800">{painter.name}</h3>
-                      <p className="text-xs text-slate-400 font-bold uppercase">{painter.type}</p>
+                      <p className="text-sm font-bold text-slate-800">{m.userName} {m.action.toLowerCase()} {m.toolName}</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">{new Date(m.timestamp).toLocaleString()}</p>
                     </div>
                   </div>
-                  <button onClick={() => setPainters(painters.filter(p => p.id !== painter.id))} className="text-slate-300 hover:text-rose-500"><TrashIcon className="h-5 w-5" /></button>
                 </div>
               ))}
             </div>
           </div>
         )}
-
-        {activeTab === 'history' && (
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
-                  <th className="px-6 py-4">Data</th>
-                  <th className="px-6 py-4">Ferramenta</th>
-                  <th className="px-6 py-4">Pintor</th>
-                  <th className="px-6 py-4">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {history.map(item => (
-                  <tr key={item.id} className="text-sm">
-                    <td className="px-6 py-4 text-slate-400 font-medium">{new Date(item.timestamp).toLocaleDateString()}</td>
-                    <td className="px-6 py-4 font-bold text-slate-800">{item.toolName}</td>
-                    <td className="px-6 py-4 text-slate-600 font-semibold">{item.painterName}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${
-                        item.type === 'Retirada' ? 'bg-blue-50 text-blue-600' : 
-                        item.type === 'Devolução OK' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-                      }`}>{item.type}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </main>
 
-      {/* Modais */}
-      {isModalOpen && (
-        <Modal title="Nova Ferramenta" onClose={() => setIsModalOpen(false)}>
-          <ToolForm onSubmit={(tool) => { setTools([...tools, tool]); setIsModalOpen(false); }} />
+      {/* Modals */}
+      {isUserModalOpen && (
+        <Modal title="Novo Usuário" onClose={() => setIsUserModalOpen(false)}>
+           <UserForm onAdd={u => { setUsers([...users, u]); setIsUserModalOpen(false); }} />
         </Modal>
       )}
-      
-      {isPainterModalOpen && (
-        <Modal title="Novo Pintor" onClose={() => setIsPainterModalOpen(false)}>
-          <PainterForm onSubmit={(painter) => { setPainters([...painters, painter]); setIsPainterModalOpen(false); }} />
+
+      {isToolModalOpen && (
+        <Modal title="Nova Ferramenta" onClose={() => setIsToolModalOpen(false)}>
+           <ToolForm onAdd={t => { setTools([...tools, t]); setIsToolModalOpen(false); }} />
         </Modal>
       )}
     </div>
   );
 };
 
-// --- Subcomponentes ---
-
-const ToolCard = ({ tool, painters, onAction, onDelete }: { tool: Tool, painters: Painter[], onAction: any, onDelete: any }) => {
-  const holder = painters.find(p => p.id === tool.currentHolderId);
-
-  return (
-    <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
-      <div>
-        <div className="flex justify-between items-start mb-4">
-          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${
-            tool.status === ToolStatus.AVAILABLE ? 'bg-emerald-50 text-emerald-600' :
-            tool.status === ToolStatus.IN_USE ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-600'
-          }`}>{tool.status}</span>
-          <button onClick={() => onDelete(tool.id)} className="text-slate-200 hover:text-rose-500"><TrashIcon className="h-4 w-4" /></button>
-        </div>
-        <h3 className="text-lg font-extrabold text-slate-800 leading-tight mb-1 uppercase tracking-tight">{tool.name}</h3>
-        <p className="text-xs text-slate-400 font-bold uppercase mb-4">{tool.category}</p>
-        
-        {holder && (
-          <div className="bg-slate-50 p-3 rounded-xl mb-6 border border-slate-100">
-            <p className="text-[9px] font-black text-slate-400 uppercase mb-1 tracking-widest">Em posse de:</p>
-            <p className="text-sm font-bold text-slate-700">{holder.name}</p>
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-2 mt-4">
-        {tool.status === ToolStatus.AVAILABLE && (
-          <div className="flex flex-col space-y-2">
-            <select 
-              className="w-full bg-slate-100 border-none rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-orange-500"
-              onChange={(e) => onAction(tool.id, 'Retirada', e.target.value)}
-              defaultValue=""
-            >
-              <option value="" disabled>Selecionar Pintor...</option>
-              {painters.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-        )}
-
-        {tool.status === ToolStatus.IN_USE && (
-          <div className="grid grid-cols-2 gap-2">
-            <button 
-              onClick={() => onAction(tool.id, 'Devolução OK')} 
-              className="flex items-center justify-center space-x-1 bg-emerald-600 text-white py-3 rounded-xl text-[10px] font-black uppercase"
-            >
-              <CheckCircleIcon className="h-4 w-4" />
-              <span>Devolver OK</span>
-            </button>
-            <button 
-              onClick={() => onAction(tool.id, 'Defeito')} 
-              className="flex items-center justify-center space-x-1 bg-rose-600 text-white py-3 rounded-xl text-[10px] font-black uppercase"
-            >
-              <ExclamationTriangleIcon className="h-4 w-4" />
-              <span>Defeito</span>
-            </button>
-          </div>
-        )}
-
-        {tool.status === ToolStatus.DEFECTIVE && (
-          <button 
-            onClick={() => onAction(tool.id, 'Devolução OK')} 
-            className="w-full bg-slate-800 text-white py-3 rounded-xl text-[10px] font-black uppercase"
-          >
-            Consertado / Voltar
-          </button>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const TabButton = ({ active, onClick, icon, label }: any) => (
+const Tab = ({ label, active, onClick, icon }: any) => (
   <button 
     onClick={onClick}
-    className={`flex-1 flex items-center justify-center space-x-2 py-3 rounded-xl transition-all ${
-      active ? 'bg-orange-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 font-semibold'
+    className={`px-6 py-4 flex items-center space-x-2 text-xs font-black uppercase tracking-tighter transition-all border-b-2 ${
+      active ? 'text-orange-600 border-orange-600' : 'text-slate-400 border-transparent hover:text-slate-600'
     }`}
   >
-    {icon}
-    <span className="text-sm font-bold">{label}</span>
+    {icon} <span>{label}</span>
   </button>
 );
 
-const Modal = ({ title, children, onClose }: any) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-    <div className="bg-white w-full max-w-md rounded-[2rem] p-8 shadow-2xl">
-      <h2 className="text-xl font-black text-slate-800 uppercase mb-6">{title}</h2>
+const ToolCard = ({ tool, currentUser, users, onAction }: any) => {
+  const holder = users.find((u: User) => u.id === tool.currentHolderId);
+  const canWithdraw = tool.status === ToolStatus.AVAILABLE && currentUser.role !== UserRole.CONFEREE;
+  const canRequestReturn = tool.status === ToolStatus.IN_USE && tool.currentHolderId === currentUser.id;
+  const canConfer = tool.status === ToolStatus.PENDING_CONFERENCE && currentUser.role !== UserRole.PAINTER;
+
+  return (
+    <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col justify-between">
+      <div>
+        <div className="flex justify-between items-start mb-4">
+          <span className={`px-2 py-1 rounded text-[8px] font-black uppercase ${
+            tool.status === ToolStatus.AVAILABLE ? 'bg-emerald-50 text-emerald-600' :
+            tool.status === ToolStatus.IN_USE ? 'bg-blue-50 text-blue-600' :
+            tool.status === ToolStatus.PENDING_CONFERENCE ? 'bg-amber-50 text-amber-600' : 'bg-rose-50 text-rose-600'
+          }`}>{tool.status}</span>
+          <span className="text-[10px] font-mono text-slate-300">#{tool.id}</span>
+        </div>
+        <h3 className="text-lg font-black text-slate-800 leading-tight mb-1 uppercase tracking-tight">{tool.name}</h3>
+        <p className="text-[10px] text-slate-400 font-black uppercase mb-4">{tool.category} • {tool.model}</p>
+
+        {holder && (
+          <div className="bg-slate-50 p-3 rounded-xl mb-6 border border-slate-100 flex items-center space-x-2">
+            <div className="h-6 w-6 rounded-full bg-orange-100 flex items-center justify-center text-[10px] font-bold text-orange-600">{holder.name[0]}</div>
+            <div>
+              <p className="text-[8px] font-black text-slate-300 uppercase leading-none">Em posse de:</p>
+              <p className="text-xs font-bold text-slate-700">{holder.name}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        {canWithdraw && (
+          <button 
+            onClick={() => onAction(tool.id, 'Retirada', ToolStatus.IN_USE)}
+            className="w-full py-3 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black"
+          >
+            Retirar Agora
+          </button>
+        )}
+
+        {canRequestReturn && (
+          <button 
+            onClick={() => onAction(tool.id, 'Solicitou Devolução', ToolStatus.PENDING_CONFERENCE)}
+            className="w-full py-3 bg-orange-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+          >
+            Sinalizar Devolução
+          </button>
+        )}
+
+        {canConfer && (
+          <div className="grid grid-cols-2 gap-2">
+            <button 
+              onClick={() => onAction(tool.id, 'Confirmou OK', ToolStatus.AVAILABLE)}
+              className="flex flex-col items-center justify-center py-3 bg-emerald-600 text-white rounded-xl"
+            >
+              <CheckBadgeIcon className="h-4 w-4 mb-1" />
+              <span className="text-[9px] font-black uppercase">Tudo OK</span>
+            </button>
+            <button 
+              onClick={() => onAction(tool.id, 'Confirmou Defeito', ToolStatus.DEFECTIVE)}
+              className="flex flex-col items-center justify-center py-3 bg-rose-600 text-white rounded-xl"
+            >
+              <ExclamationCircleIcon className="h-4 w-4 mb-1" />
+              <span className="text-[9px] font-black uppercase">Defeito</span>
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const Modal = ({ title, onClose, children }: any) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+    <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-10 shadow-2xl relative">
+      <h2 className="text-xl font-black text-slate-800 uppercase mb-6 tracking-tight">{title}</h2>
       {children}
-      <button onClick={onClose} className="mt-4 w-full text-slate-400 font-bold uppercase text-xs">Cancelar</button>
+      <button onClick={onClose} className="mt-4 w-full text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">Fechar</button>
     </div>
   </div>
 );
 
-const ToolForm = ({ onSubmit }: any) => {
-  const [name, setName] = useState('');
-  const [model, setModel] = useState('');
-  const [cat, setCat] = useState('Geral');
+const UserForm = ({ onAdd }: any) => {
+  const [form, setForm] = useState({ name: '', username: '', password: '', role: UserRole.PAINTER });
   return (
-    <div className="space-y-4">
-      <input autoFocus placeholder="Nome da Ferramenta" className="w-full p-4 bg-slate-100 rounded-2xl outline-none font-bold" onChange={e => setName(e.target.value)} />
-      <input placeholder="Modelo" className="w-full p-4 bg-slate-100 rounded-2xl outline-none font-bold" onChange={e => setModel(e.target.value)} />
-      <select className="w-full p-4 bg-slate-100 rounded-2xl outline-none font-bold" onChange={e => setCat(e.target.value)}>
-        <option>Acesso</option>
-        <option>Pintura</option>
-        <option>Preparação</option>
-        <option>Elétrica</option>
-        <option>Outros</option>
+    <div className="space-y-3">
+      <input placeholder="Nome Completo" className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, name: e.target.value})} />
+      <input placeholder="Username" className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, username: e.target.value})} />
+      <input placeholder="Senha" type="password" className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, password: e.target.value})} />
+      <select className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, role: e.target.value as UserRole})}>
+        <option value={UserRole.PAINTER}>Pintor</option>
+        <option value={UserRole.CONFEREE}>Conferente</option>
+        <option value={UserRole.ADMIN}>Administrador</option>
       </select>
-      <button onClick={() => onSubmit({ id: Date.now().toString(), name, model, category: cat, status: ToolStatus.AVAILABLE, lastUpdate: Date.now() })} className="w-full bg-orange-600 text-white py-4 rounded-2xl font-black uppercase">Adicionar</button>
+      <button onClick={() => onAdd({ ...form, id: Date.now().toString(), active: true })} className="w-full py-4 bg-orange-600 text-white rounded-xl font-black uppercase text-xs">Salvar</button>
     </div>
   );
 };
 
-const PainterForm = ({ onSubmit }: any) => {
-  const [name, setName] = useState('');
-  const [type, setType] = useState(PainterType.EMPLOYEE);
+const ToolForm = ({ onAdd }: any) => {
+  const [form, setForm] = useState({ name: '', model: '', category: 'Acesso' });
   return (
-    <div className="space-y-4">
-      <input autoFocus placeholder="Nome Completo" className="w-full p-4 bg-slate-100 rounded-2xl outline-none font-bold" onChange={e => setName(e.target.value)} />
-      <div className="flex space-x-2">
-        <button onClick={() => setType(PainterType.EMPLOYEE)} className={`flex-1 py-3 rounded-xl text-xs font-bold ${type === PainterType.EMPLOYEE ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>Funcionário</button>
-        <button onClick={() => setType(PainterType.CONTRACTOR)} className={`flex-1 py-3 rounded-xl text-xs font-bold ${type === PainterType.CONTRACTOR ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>Prestador</button>
-      </div>
-      <button onClick={() => onSubmit({ id: 'p' + Date.now(), name, type })} className="w-full bg-orange-600 text-white py-4 rounded-2xl font-black uppercase">Cadastrar</button>
+    <div className="space-y-3">
+      <input placeholder="Nome da Ferramenta" className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, name: e.target.value})} />
+      <input placeholder="Modelo" className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, model: e.target.value})} />
+      <select className="w-full bg-slate-50 p-4 rounded-xl outline-none font-bold text-sm" onChange={e => setForm({...form, category: e.target.value})}>
+        <option>Acesso</option>
+        <option>Pintura Mecanizada</option>
+        <option>Preparação</option>
+        <option>Manual</option>
+      </select>
+      <button onClick={() => onAdd({ ...form, id: Math.floor(Math.random() * 9000 + 1000).toString(), status: ToolStatus.AVAILABLE, lastUpdate: Date.now() })} className="w-full py-4 bg-slate-800 text-white rounded-xl font-black uppercase text-xs">Adicionar</button>
     </div>
   );
 };
