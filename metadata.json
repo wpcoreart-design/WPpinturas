@@ -1,8 +1,5 @@
 
 {
   "name": "PincelPro - Gestão de Pintura",
-  "description": "Sistema profissional para controle de estoque e ferramentas para empresas de pintura.",
-  "requestFramePermissions": [
-    "microphone"
-  ]
+  "description": "Sistema profissional para controle de estoque e ferramentas para empresas de pintura."
 }

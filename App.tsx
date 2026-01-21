@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Tool, ToolStatus, User, UserRole, Movement } from './types';
-import VoiceAssistant from './components/VoiceAssistant';
 import { 
   LockClosedIcon, 
   WrenchScrewdriverIcon, 
@@ -9,15 +8,12 @@ import {
   ArchiveBoxIcon, 
   ClockIcon, 
   ArrowRightOnRectangleIcon,
-  ShieldCheckIcon,
-  ExclamationCircleIcon,
-  CheckBadgeIcon,
-  UserPlusIcon,
   TrashIcon,
   PlusIcon,
+  // Added UserPlusIcon here to fix the missing reference
+  UserPlusIcon,
   CurrencyDollarIcon,
   CalendarIcon,
-  MicrophoneIcon,
   FunnelIcon
 } from '@heroicons/react/24/outline';
 
@@ -60,7 +56,6 @@ const App: React.FC = () => {
   // UI Modals
   const [isToolModalOpen, setIsToolModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-  const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = useState(false);
 
   // Sync Data
   const loadData = useCallback(() => {
@@ -220,15 +215,6 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center space-x-5">
-            {currentUser.role === UserRole.ADMIN && (
-              <button 
-                onClick={() => setIsVoiceAssistantOpen(true)}
-                className="p-2.5 bg-[#22C55E]/10 text-[#22C55E] hover:bg-[#22C55E] hover:text-[#0F172A] rounded-xl transition-all border border-[#22C55E]/20"
-                title="Assistente de Voz"
-              >
-                <MicrophoneIcon className="h-5 w-5" />
-              </button>
-            )}
             <div className="text-right hidden sm:block">
               <p className="text-xs font-black uppercase text-white">{currentUser.name}</p>
               <p className="text-[10px] font-bold text-slate-500 mt-0.5">ID #{currentUser.id}</p>
@@ -426,16 +412,6 @@ const App: React.FC = () => {
         <Modal title="Registrar Pintor" onClose={() => setIsUserModalOpen(false)}>
           <UserForm onAdd={u => { persist([...users, u], tools, history); setIsUserModalOpen(false); }} />
         </Modal>
-      )}
-
-      {isVoiceAssistantOpen && currentUser.role === UserRole.ADMIN && (
-        <VoiceAssistant 
-          onClose={() => setIsVoiceAssistantOpen(false)} 
-          tools={tools} 
-          painters={users.filter(u => u.role === UserRole.PAINTER)} 
-          userRole={currentUser.role}
-          onAction={toggleToolStatus}
-        />
       )}
     </div>
   );
