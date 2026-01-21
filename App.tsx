@@ -1,7 +1,14 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Tool, ToolStatus, User, UserRole, Movement } from './types';
-import { supabase } from './src/lib/supabase'; 
+
+import {
+  FunnelIcon,
+  ChevronRightIcon
+} from '@heroicons/react/24/outline';
+
+import { supabase } from './src/lib/supabase';
+
   LockClosedIcon, 
   WrenchScrewdriverIcon, 
   UserGroupIcon, 
